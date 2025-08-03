@@ -64,7 +64,7 @@ def init_model():
             shutil.rmtree(trained_model_path, ignore_errors=True)
             return init_model()
     else:
-        # 首次运行，加载基础模型
+        # 首次运行， 加载基础模型
         print("🔄 首次运行，加载基础BERT模型并训练...")
         if not base_model_path.exists():
             print(f"❌ 基础模型不存在于 {base_model_path}")
