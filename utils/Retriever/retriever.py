@@ -2,7 +2,7 @@ import os
 import numpy as np
 import faiss
 from sentence_transformers import SentenceTransformer
-from typing import List, Dict
+from typing import List, Dict, Tuple
 import docx
 from docx import Document
 import re
@@ -51,13 +51,29 @@ def create_rag_retriever(docx_path: str, model_name: str = "BAAI/bge-small-zh-v1
         index = faiss.IndexFlatIP(dim)
         index.add(embeddings.astype(np.float32))
         
-        def retrieve(question: str, top_k: int = 1) -> str:
-            """执行检索，返回最相关的内容"""
+        def retrieve(question: str, top_k: int = 5) -> str:
+            """执行检索，返回所有相关的内容"""
             query_embedding = model.encode(question, normalize_embeddings=True)
             scores, indices = index.search(np.array([query_embedding]), top_k)
             
-            if scores[0][0] > similarity_threshold:
-                return sentences[indices[0][0]]
+            # 收集所有超过阈值的句子
+            relevant_sentences = []
+            for score, idx in zip(scores[0], indices[0]):
+                if score > similarity_threshold:
+                    relevant_sentences.append(sentences[idx])
+            
+            if relevant_sentences:
+                # 去重并保留原始顺序
+                seen = set()
+                unique_sentences = []
+                for s in relevant_sentences:
+                    if s not in seen:
+                        seen.add(s)
+                        unique_sentences.append(s)
+                
+                # 组合成连贯的答案
+                answer = " ".join(unique_sentences)
+                return answer
             return "未找到相关答案"
             
         return retrieve
