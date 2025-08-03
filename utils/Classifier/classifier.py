@@ -6,54 +6,41 @@ from transformers import BertTokenizer, BertForSequenceClassification
 import random
 
 class TextClassifier:
-    """基于BERT的文本分类器"""
-    
+
     def __init__(self, model_path, num_labels=2, device=None):
-        """初始化分类器"""
+        """初始化
+        :param model_path: 模型路径（必须参数）
+        """
         self.model_path = model_path
+        self.trained_model_path = os.path.join(os.path.dirname(__file__), "models", "trained_model")  # 默认训练后保存路径
         self.num_labels = num_labels
         self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.tokenizer = None
         self.model = None
-        
+
     def load_model(self):
-        """加载预训练模型和分词器"""
+        """加载指定路径的模型"""
         try:
-            # 检查模型文件是否存在
+            # 检查必需文件
             required_files = ['config.json', 'model.safetensors', 'vocab.txt']
             missing_files = [f for f in required_files if not os.path.exists(os.path.join(self.model_path, f))]
             
             if missing_files:
-                print(f"模型文件缺失：{missing_files}，开始下载bert-base-chinese...")
-                os.makedirs(self.model_path, exist_ok=True)
-                
-                # 下载并保存预训练模型
-                self.tokenizer = BertTokenizer.from_pretrained("bert-base-chinese")
-                self.model = BertForSequenceClassification.from_pretrained(
-                    "bert-base-chinese", 
-                    num_labels=self.num_labels
-                )
-                
-                self.tokenizer.save_pretrained(self.model_path)
-                self.model.save_pretrained(self.model_path, safe_serialization=True)
-                print(f"模型已保存至：{self.model_path}")
-            else:
-                # 加载已存在的模型
-                self.tokenizer = BertTokenizer.from_pretrained(self.model_path)
-                self.model = BertForSequenceClassification.from_pretrained(
-                    self.model_path,
-                    num_labels=self.num_labels,
-                    use_safetensors=True
-                )
-            
+                raise ValueError(f"模型文件缺失: {missing_files}")
+
+            self.tokenizer = BertTokenizer.from_pretrained(self.model_path)
+            self.model = BertForSequenceClassification.from_pretrained(
+                self.model_path,
+                num_labels=self.num_labels,
+                use_safetensors=True
+            )
             self.model.to(self.device)
-            print(f"✅ 模型加载成功 from {self.model_path}")
+            print(f"✅ 成功加载模型 from {self.model_path}")
             return True
-            
         except Exception as e:
             print(f"❌ 模型加载失败: {str(e)}")
             return False
-    
+        
     def train(self, questions, labels, batch_size=4, learning_rate=2e-5, epochs=5, val_size=0.2, augmenter=None, augment_times=3):
         """训练模型"""
         if self.model is None or self.tokenizer is None:
@@ -65,7 +52,7 @@ class TextClassifier:
             questions, labels, test_size=val_size, random_state=42)
         
         # 准备训练数据（支持数据增强）
-        from .data_utils import prepare_data  # 从外部文件导入数据处理函数
+        from utils.Classifier.data_utils import prepare_data  # 从外部文件导入数据处理函数
         
         train_inputs, train_labels = prepare_data(
             self.tokenizer, train_q, train_lbl, augmenter, augment_times)
@@ -121,21 +108,31 @@ class TextClassifier:
         return predictions
     
     def save_model(self, save_path=None):
-        """保存模型"""
-        if self.model is None or self.tokenizer is None:
-            print("❌ 没有可保存的模型")
-            return False
-        
-        save_path = save_path or self.model_path
+        """将模型保存到指定路径
+        :param save_path: 可选，指定保存路径。如果为None，则使用self.trained_model_path
+        """
+        save_path = save_path or self.trained_model_path
         os.makedirs(save_path, exist_ok=True)
-        
         try:
+            # 保存tokenizer
             self.tokenizer.save_pretrained(save_path)
+            # 保存模型
             self.model.save_pretrained(save_path, safe_serialization=True)
+            
+            # 验证保存的文件
+            required_files = ['config.json', 'model.safetensors', 'vocab.txt']
+            for f in required_files:
+                if not os.path.exists(os.path.join(save_path, f)):
+                    raise ValueError(f"保存失败，缺少文件: {f}")
+                    
             print(f"✅ 模型已保存至: {save_path}")
             return True
         except Exception as e:
             print(f"❌ 模型保存失败: {str(e)}")
+            # 保存失败时清理目录
+            if os.path.exists(save_path):
+                import shutil
+                shutil.rmtree(save_path)
             return False
     
     def _train_model(self, model, dataloader, optimizer, epochs=5):
